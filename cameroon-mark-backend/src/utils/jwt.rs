@@ -20,7 +20,8 @@ pub struct Claims {
 // Generate a JWT token for a user
 pub fn generate_token(user: &User) -> Result<String> {
     let now = Utc::now();
-    let exp = (now + Duration::hours(24)).timestamp();
+    let expiration_seconds = config::get_config().jwt.expiration;
+    let exp = (now + Duration::seconds(expiration_seconds as i64)).timestamp();
 
     let claims = Claims {
         sub: user.id,

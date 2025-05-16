@@ -39,11 +39,15 @@ pub struct MinioConfig {
     pub secret_key: String,
     pub bucket: String,
     pub region: String,
+    pub public_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CorsConfig {
     pub allowed_origins: Vec<String>,
+    pub allowed_methods: Vec<String>,
+    pub allowed_headers: Vec<String>,
+    pub max_age_secs: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -65,10 +69,10 @@ pub fn get_config() -> &'static Config {
     CONFIG.get_or_init(|| {
         // Load environment variables from .env file
         dotenv().ok();
-        
+
         // Try to load .env.local if it exists (for local development)
         dotenv::from_filename(".env.local").ok();
-        
+
         Config {
             database: DatabaseConfig {
                 url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
@@ -97,6 +101,7 @@ pub fn get_config() -> &'static Config {
                 secret_key: env::var("MINIO_SECRET_KEY").expect("MINIO_SECRET_KEY must be set"),
                 bucket: env::var("MINIO_BUCKET").expect("MINIO_BUCKET must be set"),
                 region: env::var("MINIO_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
+                public_url: env::var("MINIO_PUBLIC_URL").unwrap_or_else(|_| "http://localhost:9000".to_string()),
             },
             cors: CorsConfig {
                 allowed_origins: env::var("ALLOWED_ORIGINS")
@@ -104,6 +109,9 @@ pub fn get_config() -> &'static Config {
                     .split(',')
                     .map(|s| s.trim().to_string())
                     .collect(),
+                allowed_methods: vec!["GET".to_string(), "POST".to_string(), "PUT".to_string(), "DELETE".to_string(), "OPTIONS".to_string()],
+                allowed_headers: vec!["Authorization".to_string(), "Content-Type".to_string(), "X-Requested-With".to_string()],
+                max_age_secs: 3600,
             },
             password_reset: PasswordResetConfig {
                 expiration: env::var("PASSWORD_RESET_EXPIRATION")

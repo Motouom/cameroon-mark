@@ -5,7 +5,7 @@ use axum::{
 use std::sync::Arc;
 
 use crate::handlers::product;
-use crate::middlewares::auth::{ExtractUserId, ExtractUserRole};
+use crate::middlewares::auth::{ExtractUserId, ExtractUserRole, require_seller};
 use crate::AppState;
 
 pub fn routes() -> Router<Arc<AppState>> {
@@ -13,7 +13,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/", post(product::create_product))
         .route("/:id", put(product::update_product))
         .route("/:id", delete(product::delete_product))
-        .route_layer(axum::middleware::from_extractor::<ExtractUserRole>());
+        .layer(axum::middleware::from_fn(require_seller));
 
     Router::new()
         .route("/", get(product::get_products))

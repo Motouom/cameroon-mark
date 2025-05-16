@@ -44,10 +44,15 @@ impl ValueType for ImageArray {
     fn try_from(v: sea_orm::Value) -> Result<Self, sea_orm::sea_query::ValueTypeErr> {
         match v {
             sea_orm::Value::Json(Some(json)) => {
-                let array: Vec<String> = serde_json::from_value(*json).map_err(|_| {
-                    sea_orm::sea_query::ValueTypeErr
-                })?;
-                Ok(ImageArray(array))
+                match *json {
+                    serde_json::Value::Array(arr) => {
+                        let array: Vec<String> = arr.into_iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect();
+                        Ok(ImageArray(array))
+                    },
+                    _ => Err(sea_orm::sea_query::ValueTypeErr),
+                }
             }
             _ => Err(sea_orm::sea_query::ValueTypeErr),
         }
@@ -62,23 +67,35 @@ impl ValueType for ImageArray {
     }
 
     fn column_type() -> sea_orm::sea_query::ColumnType {
-        sea_orm::sea_query::ColumnType::Json
+        sea_orm::sea_query::ColumnType::JsonBinary
     }
 }
 
 impl From<ImageArray> for sea_orm::Value {
     fn from(images: ImageArray) -> Self {
-        sea_orm::Value::Json(Some(serde_json::to_value(images.0).unwrap().into()))
+        let array_value = serde_json::Value::Array(
+            images.0.into_iter()
+                .map(serde_json::Value::String)
+                .collect()
+        );
+        sea_orm::Value::Json(Some(Box::new(array_value)))
     }
 }
 
 impl TryGetable for ImageArray {
     fn try_get_by<I: sea_orm::ColIdx>(res: &sea_orm::QueryResult, idx: I) -> Result<Self, sea_orm::TryGetError> {
         let json: serde_json::Value = res.try_get_by(idx)?;
-        let array: Vec<String> = serde_json::from_value(json).map_err(|e| {
-            sea_orm::TryGetError::DbErr(sea_orm::DbErr::Custom(format!("Failed to parse image array: {}", e)))
-        })?;
-        Ok(ImageArray(array))
+        match json {
+            serde_json::Value::Array(arr) => {
+                let array: Vec<String> = arr.into_iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+                Ok(ImageArray(array))
+            },
+            _ => Err(sea_orm::TryGetError::DbErr(
+                sea_orm::DbErr::Custom("Invalid image array format".to_string())
+            )),
+        }
     }
 }
 
@@ -231,6 +248,27 @@ impl Default for ProductFilterOptions {
             featured: None,
             page: None,
             per_page: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductSummary {
+    pub id: Uuid,
+    pub title: String,
+    pub price: BigDecimal,
+    pub images: Vec<String>,
+    pub rating: Option<f64>,
+}
+
+impl From<Product> for ProductSummary {
+    fn from(product: Product) -> Self {
+        Self {
+            id: product.id,
+            title: product.title,
+            price: product.price,
+            images: product.images.0,
+            rating: product.rating,
         }
     }
 }

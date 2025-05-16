@@ -7,8 +7,8 @@ use validator::{Validate, ValidationError};
 use sqlx::types::BigDecimal;
 use std::str::FromStr;
 use serde::de::{self, Deserializer, Visitor};
-use sea_orm::{TryGetable, TryGetError};
-use sea_orm::sea_query::{ValueType, ValueTypeErr};
+use sea_orm::entity::prelude::*;
+use sea_orm::DeriveActiveEnum;
 use std::collections::HashSet;
 use crate::entities::user;
 
@@ -20,18 +20,27 @@ pub struct User {
     #[serde(skip_serializing)]
     pub password_hash: String,
     pub role: UserRole,
-    pub location: Option<String>,
     pub phone: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub address_street: Option<String>,
+    pub address_city: Option<String>,
+    pub address_postal_code: Option<String>,
+    pub address_country: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "user_role")]
 #[serde(rename_all = "snake_case")]
 pub enum UserRole {
-    Admin,
+    #[sea_orm(string_value = "seller")]
     Seller,
-    Buyer,
+    #[sea_orm(string_value = "customer")]
+    Customer,
+    #[sea_orm(string_value = "admin")]
+    Admin,
+    #[sea_orm(string_value = "pending_seller")]
+    PendingSeller,
 }
 
 impl FromStr for UserRole {
@@ -39,58 +48,12 @@ impl FromStr for UserRole {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "admin" => Ok(UserRole::Admin),
             "seller" => Ok(UserRole::Seller),
-            "buyer" => Ok(UserRole::Buyer),
+            "customer" => Ok(UserRole::Customer),
+            "buyer" => Ok(UserRole::Customer), // For backward compatibility
+            "admin" => Ok(UserRole::Admin),
+            "pending_seller" => Ok(UserRole::PendingSeller),
             _ => Err(format!("Unknown role: {}", s)),
-        }
-    }
-}
-
-impl ValueType for UserRole {
-    fn try_from(v: sea_orm::Value) -> Result<Self, ValueTypeErr> {
-        match v {
-            sea_orm::Value::String(Some(s)) => match s.as_str() {
-                "admin" => Ok(UserRole::Admin),
-                "seller" => Ok(UserRole::Seller),
-                "buyer" => Ok(UserRole::Buyer),
-                _ => Err(ValueTypeErr),
-            },
-            _ => Err(ValueTypeErr),
-        }
-    }
-
-    fn type_name() -> String {
-        "user_role".to_string()
-    }
-
-    fn array_type() -> sea_orm::sea_query::ArrayType {
-        sea_orm::sea_query::ArrayType::String
-    }
-
-    fn column_type() -> sea_orm::sea_query::ColumnType {
-        sea_orm::sea_query::ColumnType::String(sea_orm::sea_query::StringLen::None)
-    }
-}
-
-impl From<UserRole> for sea_orm::Value {
-    fn from(role: UserRole) -> Self {
-        match role {
-            UserRole::Admin => sea_orm::Value::String(Some(Box::new("admin".to_string()))),
-            UserRole::Seller => sea_orm::Value::String(Some(Box::new("seller".to_string()))),
-            UserRole::Buyer => sea_orm::Value::String(Some(Box::new("buyer".to_string()))),
-        }
-    }
-}
-
-impl TryGetable for UserRole {
-    fn try_get_by<I: sea_orm::ColIdx>(res: &sea_orm::QueryResult, idx: I) -> Result<Self, sea_orm::TryGetError> {
-        let value: String = res.try_get_by(idx)?;
-        match value.as_str() {
-            "admin" => Ok(UserRole::Admin),
-            "seller" => Ok(UserRole::Seller),
-            "buyer" => Ok(UserRole::Buyer),
-            _ => Err(sea_orm::TryGetError::DbErr(sea_orm::DbErr::Custom(format!("Invalid user role: {}", value)))),
         }
     }
 }
@@ -102,9 +65,17 @@ pub struct UserProfile {
     pub name: String,
     pub email: String,
     pub role: UserRole,
-    pub location: Option<String>,
     pub phone: Option<String>,
     pub created_at: DateTime<Utc>,
+    pub address: Option<AddressDetails>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AddressDetails {
+    pub street: Option<String>,
+    pub city: Option<String>,
+    pub postal_code: Option<String>,
+    pub country: Option<String>,
 }
 
 impl From<User> for UserProfile {
@@ -114,9 +85,18 @@ impl From<User> for UserProfile {
             name: user.name,
             email: user.email,
             role: user.role,
-            location: user.location,
             phone: user.phone,
             created_at: user.created_at,
+            address: if user.address_street.is_some() || user.address_city.is_some() || user.address_postal_code.is_some() || user.address_country.is_some() {
+                Some(AddressDetails {
+                    street: user.address_street,
+                    city: user.address_city,
+                    postal_code: user.address_postal_code,
+                    country: user.address_country,
+                })
+            } else {
+                None
+            },
         }
     }
 }
@@ -126,19 +106,18 @@ impl From<User> for UserProfile {
 pub struct RegisterRequest {
     #[validate(length(min = 3, max = 100, message = "Name must be between 3 and 100 characters"))]
     pub name: String,
-    
+
     #[validate(email(message = "Email must be valid"))]
     pub email: String,
-    
+
     #[validate(length(min = 8, message = "Password must be at least 8 characters"))]
     pub password: String,
-    
+
     #[validate(must_match(other = "password", message = "Passwords must match"))]
     pub password_confirmation: String,
-    
+
     #[serde(deserialize_with = "deserialize_role")]
     pub role: UserRole,
-    pub location: Option<String>,
     pub phone: Option<String>,
 }
 
@@ -147,7 +126,7 @@ pub struct RegisterRequest {
 pub struct LoginRequest {
     #[validate(email(message = "Email must be valid"))]
     pub email: String,
-    
+
     #[validate(length(min = 1, message = "Password is required"))]
     pub password: String,
 }
@@ -157,9 +136,17 @@ pub struct LoginRequest {
 pub struct UpdateProfileRequest {
     #[validate(length(min = 3, max = 100, message = "Name must be between 3 and 100 characters"))]
     pub name: String,
-    
-    pub location: Option<String>,
+
     pub phone: Option<String>,
+}
+
+// New struct for handling address updates
+#[derive(Debug, Serialize, Deserialize, Validate, Clone)]
+pub struct UserAddressRequest {
+    pub street: Option<String>,
+    pub city: Option<String>,
+    pub postal_code: Option<String>,
+    pub country: Option<String>,
 }
 
 // Custom deserializer for UserRole
@@ -192,10 +179,10 @@ where
 pub struct ChangePasswordRequest {
     #[validate(length(min = 1, message = "Current password is required"))]
     pub current_password: String,
-    
+
     #[validate(length(min = 8, message = "New password must be at least 8 characters"))]
     pub new_password: String,
-    
+
     #[validate(must_match(other = "new_password", message = "Passwords must match"))]
     pub new_password_confirmation: String,
 }
@@ -211,10 +198,10 @@ pub struct PasswordResetRequest {
 #[derive(Debug, Deserialize, Validate)]
 pub struct PasswordResetConfirmRequest {
     pub token: String,
-    
+
     #[validate(length(min = 8, message = "New password must be at least 8 characters"))]
     pub new_password: String,
-    
+
     #[validate(must_match(other = "new_password", message = "Passwords must match"))]
     pub new_password_confirmation: String,
 }
@@ -227,10 +214,13 @@ impl From<user::Model> for User {
             email: model.email,
             password_hash: model.password_hash,
             role: model.role,
-            location: model.location,
             phone: model.phone,
             created_at: model.created_at,
             updated_at: model.updated_at,
+            address_street: model.address_street,
+            address_city: model.address_city,
+            address_postal_code: model.address_postal_code,
+            address_country: model.address_country,
         }
     }
 }

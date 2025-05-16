@@ -69,7 +69,7 @@ cargo run --bin migrate
 cargo run
 ```
 
-The API will be available at `http://localhost:8080`.
+The API will be available at `http://localhost:8081`.
 
 ## API Endpoints
 

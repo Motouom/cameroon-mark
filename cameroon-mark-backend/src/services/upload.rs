@@ -3,7 +3,17 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
+use axum::{
+    body::Bytes,
+    extract::Multipart,
+    http::StatusCode,
+};
+use std::io;
+
 use crate::errors::{AppError, Result};
+
+const MAX_FILE_SIZE: usize = 5 * 1024 * 1024; // 5MB
+const ALLOWED_EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "gif"];
 
 // Generate a presigned URL for S3/MinIO upload
 pub async fn generate_presigned_url(
@@ -13,14 +23,11 @@ pub async fn generate_presigned_url(
     file_name: &str,
     content_type: &str,
 ) -> Result<String> {
-    // Create a unique file name using the user ID and original file name
-    let unique_file_name = format!("{}/{}", user_id, file_name);
-    
     // Create a presigned PUT request
     let presigned_req = s3_client
         .put_object()
         .bucket(bucket)
-        .key(&unique_file_name)
+        .key(file_name)
         .content_type(content_type)
         .presigned(PresigningConfig::expires_in(Duration::from_secs(3600)).unwrap())
         .await
@@ -30,18 +37,11 @@ pub async fn generate_presigned_url(
     Ok(presigned_req.uri().to_string())
 }
 
-use axum::{
-    body::Bytes,
-    extract::Multipart,
-    http::StatusCode,
-};
-use std::io;
-use tokio::fs;
-
-const MAX_FILE_SIZE: usize = 5 * 1024 * 1024; // 5MB
-const ALLOWED_EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "gif"];
-
-pub async fn upload_image(mut multipart: Multipart) -> Result<Vec<String>> {
+pub async fn upload_image(
+    s3_client: &Arc<S3Client>,
+    bucket: &str,
+    mut multipart: Multipart
+) -> Result<Vec<String>> {
     let mut uploaded_files = Vec::new();
     let mut has_files = false;
 
@@ -79,17 +79,17 @@ pub async fn upload_image(mut multipart: Multipart) -> Result<Vec<String>> {
         
         // Generate unique filename
         let unique_filename = format!("{}.{}", Uuid::new_v4(), extension);
-        let file_path = format!("uploads/{}", unique_filename);
         
-        // Create uploads directory if it doesn't exist
-        fs::create_dir_all("uploads").await.map_err(|e| {
-            AppError::internal(format!("Failed to create uploads directory: {}", e))
-        })?;
-        
-        // Save file
-        fs::write(&file_path, data).await.map_err(|e| {
-            AppError::internal(format!("Failed to save file: {}", e))
-        })?;
+        // Upload file to MinIO
+        s3_client
+            .put_object()
+            .bucket(bucket)
+            .key(&unique_filename)
+            .body(data.into())
+            .content_type(format!("image/{}", extension))
+            .send()
+            .await
+            .map_err(|e| AppError::internal(format!("Failed to upload file to MinIO: {}", e)))?;
         
         uploaded_files.push(unique_filename);
     }

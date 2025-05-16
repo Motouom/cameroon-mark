@@ -12,11 +12,14 @@ pub struct Model {
     pub email: String,
     pub password_hash: String,
     pub name: String,
-    pub location: Option<String>,
     pub phone: Option<String>,
     pub role: UserRole,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub address_street: Option<String>,
+    pub address_city: Option<String>,
+    pub address_postal_code: Option<String>,
+    pub address_country: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

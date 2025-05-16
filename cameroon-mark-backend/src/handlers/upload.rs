@@ -39,15 +39,22 @@ pub async fn get_presigned_url(
     // Get the endpoint from config
     let endpoint = &state.config.minio.endpoint;
     
-    // Return success response with presigned URL
+    // Return success response with presigned URL and file URL
     Ok(Json(ApiResponse::success(serde_json::json!({
         "presigned_url": presigned_url,
-        "file_url": format!("{}/{}/{}", endpoint, bucket, payload.file_name),
+        "file_url": format!("{}/{}/{}", endpoint, bucket, payload.file_name)
     }))))
 }
 
-pub async fn upload_image_handler(multipart: Multipart) -> Result<impl IntoResponse> {
-    let uploaded_files = upload::upload_image(multipart).await?;
+pub async fn upload_image_handler(
+    State(state): State<Arc<AppState>>,
+    multipart: Multipart
+) -> Result<impl IntoResponse> {
+    let uploaded_files = upload::upload_image(
+        &state.s3_client,
+        &state.config.minio.bucket,
+        multipart
+    ).await?;
     
     Ok(Json(ApiResponse::success_with_message(
         uploaded_files,

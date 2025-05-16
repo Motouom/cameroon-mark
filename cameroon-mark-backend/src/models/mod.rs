@@ -5,3 +5,7 @@ pub mod review;
 pub mod order;
 pub mod message;
 pub mod cart;
+pub mod saved_item;
+pub mod analytics;
+pub mod admin;
+pub mod marketing;

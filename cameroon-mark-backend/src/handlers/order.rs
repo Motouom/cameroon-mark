@@ -41,17 +41,22 @@ pub async fn get_orders(
 ) -> Result<impl IntoResponse> {
     // Get orders based on user role
     let orders = match user_role.0 {
-        // For buyers, get their orders
-        UserRole::Buyer => {
+        // For customers, get their orders
+        UserRole::Customer => {
             order::get_buyer_orders(&state.db, user_id.0).await?
         },
         // For sellers, get orders for their products
         UserRole::Seller => {
             order::get_seller_orders(&state.db, user_id.0).await?
         },
-        // For admins, get all orders
+        // Admin can see all orders
         UserRole::Admin => {
+            // Admins can view all orders in the system
             order::get_all_orders(&state.db).await?
+        },
+        // Pending sellers don't have access to orders yet
+        UserRole::PendingSeller => {
+            return Err(AppError::forbidden("Pending sellers cannot view orders"));
         },
     };
     
@@ -70,8 +75,8 @@ pub async fn get_order(
     
     // Check if user is authorized to view this order
     match user_role.0 {
-        UserRole::Buyer => {
-            // Buyers can only view their own orders
+        UserRole::Customer => {
+            // Customers can only view their own orders
             if order.buyer_id != user_id.0 {
                 return Err(AppError::forbidden("You are not authorized to view this order"));
             }
@@ -84,15 +89,18 @@ pub async fn get_order(
             }
         },
         UserRole::Admin => {
-            // Admins can view all orders
+            // Admins can view any order
+            // No restrictions needed
+        },
+        UserRole::PendingSeller => {
+            // Pending sellers don't have access to orders
+            return Err(AppError::forbidden("Pending sellers cannot view orders"));
         },
     }
     
     // Return success response with order
     Ok(Json(ApiResponse::success(order)))
 }
-
-
 
 pub async fn update_order_status(
     State(state): State<Arc<AppState>>,

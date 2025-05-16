@@ -18,19 +18,33 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
   minio:
     image: minio/minio:latest
     container_name: cmr_market_minio
     environment:
-      MINIO_ROOT_USER: minio
+      MINIO_ROOT_USER: jP6QfXwB9hunO2mOdpSE
       MINIO_ROOT_PASSWORD: minio123
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+      MINIO_SERVER_URL: http://localhost:9000
+      MINIO_BROWSER: "on"
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+      MINIO_CORS_ALLOW_ORIGINS: "*"
+      MINIO_CORS_ALLOW_METHODS: "GET,PUT,POST,DELETE,OPTIONS,HEAD"
+      MINIO_CORS_ALLOW_HEADERS: "*"
+      MINIO_CORS_EXPOSE_HEADERS: "ETag,Server,Range,Content-Length,Content-Type"
+      MINIO_ADDRESS: ":9000"
+      MINIO_CONSOLE_ADDRESS: ":9001"
+      MINIO_REGION: "us-east-1"
+      MINIO_DOMAIN: localhost
+      MINIO_PUBLIC_URL: "http://localhost:9000"
+    networks:
+      - app-network
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
-    command: server /data --console-address ":9001"
+    command: server /data --console-address ":9001" --address ":9000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
@@ -42,15 +56,47 @@ services:
     image: minio/mc
     container_name: cmr_market_createbuckets
     depends_on:
-      - minio
+      minio:
+        condition: service_healthy
+    networks:
+      - app-network
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc config host add myminio http://minio:9000 minio minio123;
-      /usr/bin/mc mb myminio/cmr-market-images;
+      sleep 10;
+      /usr/bin/mc config host add myminio http://minio:9000 jP6QfXwB9hunO2mOdpSE minio123;
+      /usr/bin/mc mb myminio/cmr-market-images --ignore-existing;
+      /usr/bin/mc anonymous set public myminio/cmr-market-images;
       /usr/bin/mc policy set public myminio/cmr-market-images;
+      echo '{
+        \"Version\": \"2012-10-17\",
+        \"Statement\": [
+          {
+            \"Effect\": \"Allow\",
+            \"Principal\": {
+              \"AWS\": [\"*\"]
+            },
+            \"Action\": [
+              \"s3:GetObject\",
+              \"s3:PutObject\",
+              \"s3:DeleteObject\",
+              \"s3:ListBucket\"
+            ],
+            \"Resource\": [
+              \"arn:aws:s3:::cmr-market-images/*\",
+              \"arn:aws:s3:::cmr-market-images\"
+            ]
+          }
+        ]
+      }' > /tmp/bucket-policy.json;
+      /usr/bin/mc policy set-json /tmp/bucket-policy.json myminio/cmr-market-images;
+      /usr/bin/mc anonymous set download myminio/cmr-market-images/*;
       exit 0;
       "
 
 volumes:
   postgres_data:
   minio_data:
+
+networks:
+  app-network:
+    driver: bridge

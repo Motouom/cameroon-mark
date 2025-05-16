@@ -1,12 +1,10 @@
 use chrono::{DateTime, Utc};
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, ActiveValue, ConnectionTrait};
-use sea_orm::ActiveModelTrait;
+use sea_orm::{DatabaseConnection, ConnectionTrait};
 use uuid::Uuid;
 
 use crate::errors::{AppError, Result};
 use crate::models::user::{User, UserRole, RegisterRequest, LoginRequest};
 use crate::utils::{jwt, password};
-use crate::entities::{user, user::Entity as UserEntity};
 
 // Register a new user
 pub async fn register(db: &DatabaseConnection, payload: RegisterRequest) -> Result<(User, String)> {
@@ -63,9 +61,10 @@ pub async fn register(db: &DatabaseConnection, payload: RegisterRequest) -> Resu
                 None => sea_orm::Value::String(None),
             },
             match payload.role {
-                UserRole::Admin => "admin".into(),
+                UserRole::Customer => "customer".into(),
                 UserRole::Seller => "seller".into(),
-                UserRole::Buyer => "buyer".into(),
+                UserRole::Admin => "admin".into(),
+                UserRole::PendingSeller => "pending_seller".into(),
             },
             now.into(),
             now.into(),
@@ -83,12 +82,18 @@ pub async fn register(db: &DatabaseConnection, payload: RegisterRequest) -> Resu
         email: row.try_get::<String>("email", "")?,
         password_hash: row.try_get::<String>("password_hash", "")?,
         name: row.try_get::<String>("name", "")?,
-        location: row.try_get::<Option<String>>("location", "").ok().flatten(),
+        address_street: None,
+        address_city: None,
+        address_postal_code: None,
+        address_country: None,
         phone: row.try_get::<Option<String>>("phone", "").ok().flatten(),
         role: match row.try_get::<String>("role", "")?.as_str() {
-            "admin" => UserRole::Admin,
             "seller" => UserRole::Seller,
-            _ => UserRole::Buyer,
+            "admin" => UserRole::Admin,
+            "pending_seller" => UserRole::PendingSeller,
+            "customer" => UserRole::Customer,
+            "buyer" => UserRole::Customer, // For backward compatibility
+            _ => UserRole::Customer, // Default to customer role
         },
         created_at: row.try_get::<DateTime<Utc>>("created_at", "")?,
         updated_at: row.try_get::<DateTime<Utc>>("updated_at", "")?,
@@ -111,7 +116,6 @@ pub async fn login(db: &DatabaseConnection, payload: LoginRequest) -> Result<(Us
             email, 
             password_hash, 
             name, 
-            location, 
             phone, 
             role::text as role_text, 
             created_at, 
@@ -141,12 +145,19 @@ pub async fn login(db: &DatabaseConnection, payload: LoginRequest) -> Result<(Us
         email: row.try_get::<String>("email", "")?,
         password_hash,
         name: row.try_get::<String>("name", "")?,
-        location: row.try_get::<Option<String>>("location", "").ok().flatten(),
+        address_street: None,
+        address_city: None,
+        address_postal_code: None,
+        address_country: None,
         phone: row.try_get::<Option<String>>("phone", "").ok().flatten(),
         role: match row.try_get::<String>("role_text", "")?.as_str() {
-            "admin" => UserRole::Admin,
             "seller" => UserRole::Seller,
-            _ => UserRole::Buyer,
+            "customer" => UserRole::Customer,
+            "admin" => UserRole::Admin,
+            "pending_seller" => UserRole::PendingSeller,
+            // For backward compatibility
+            "buyer" => UserRole::Customer,
+            _ => UserRole::Customer, // Default to customer role
         },
         created_at: row.try_get::<DateTime<Utc>>("created_at", "")?,
         updated_at: row.try_get::<DateTime<Utc>>("updated_at", "")?,

@@ -1,0 +1,11 @@
+{
+  "corsRules": [
+    {
+      "allowedHeaders": ["*"],
+      "allowedMethods": ["GET", "PUT", "POST", "DELETE"],
+      "allowedOrigins": ["http://localhost:8083"],
+      "exposeHeaders": ["ETag", "Content-Length", "Content-Type"],
+      "maxAgeSeconds": 3600
+    }
+  ]
+} 

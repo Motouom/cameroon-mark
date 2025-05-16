@@ -7,19 +7,22 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::{
-    errors::Result,
+    errors::{Result, ApiResponse},
     models::product::{CreateProductRequest, UpdateProductRequest, ProductFilterOptions, ProductResponse},
     services::product,
     middlewares::auth::ExtractUserId,
+    utils::validation,
     AppState,
 };
 
 pub async fn get_products(
     State(state): State<Arc<AppState>>,
     Query(filter): Query<ProductFilterOptions>,
-) -> Result<Json<Vec<ProductResponse>>> {
+) -> Result<Json<ApiResponse<Vec<ProductResponse>>>> {
     let products = product::get_products(&state.db, filter).await?;
-    Ok(Json(products.into_iter().map(ProductResponse::from).collect()))
+    Ok(Json(ApiResponse::success(
+        products.into_iter().map(ProductResponse::from).collect()
+    )))
 }
 
 pub async fn get_product(
@@ -35,6 +38,9 @@ pub async fn create_product(
     ExtractUserId(seller_id): ExtractUserId,
     Json(payload): Json<CreateProductRequest>,
 ) -> Result<Json<ProductResponse>> {
+    // Validate request payload
+    validation::validate(&payload)?;
+    
     let product = product::create_product(&state.db, seller_id, payload).await?;
     Ok(Json(ProductResponse::from(product)))
 }
@@ -45,6 +51,9 @@ pub async fn update_product(
     Path(product_id): Path<Uuid>,
     Json(payload): Json<UpdateProductRequest>,
 ) -> Result<Json<ProductResponse>> {
+    // Validate request payload
+    validation::validate(&payload)?;
+    
     let product = product::update_product(&state.db, product_id, seller_id, payload).await?;
     Ok(Json(ProductResponse::from(product)))
 }

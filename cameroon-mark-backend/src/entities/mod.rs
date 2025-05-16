@@ -1,3 +1,10 @@
-pub mod product;
+pub mod user;
 pub mod category;
-pub mod user; 
+pub mod product;
+pub mod saved_item;
+pub mod order;
+pub mod order_item;
+pub mod reported_item;
+pub mod campaign;
+pub mod discount_code;
+pub mod email_campaign;
